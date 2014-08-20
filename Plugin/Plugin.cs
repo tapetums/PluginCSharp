@@ -4,136 +4,155 @@ using System;
 using System.Collections.Generic;
 using System.Drawing;
 using System.Threading;
-
-//---------------------------------------------------------------------------//
-
-using size_t = System.IntPtr;
+using System.Threading.Tasks;
 
 //---------------------------------------------------------------------------//
 
 namespace Plugin
 {
-    using MessageMap = MultiMap<string, IPlugin>;
-
-    public abstract class Data<T> : IData
-    {
-        protected string m_name;
-        protected T      m_content;
-
-        public Data(string data_name, T content)
-        {
-            m_name    = data_name;
-            m_content = content;
-        }
-
-        public string name { get { return m_name; } }
-        public uint   flag { get { return 0; } set { } }
-        public abstract size_t size { get; }
-        public object content
-        {
-            get
-            {
-                return m_content;
-            }
-            set
-            {
-                if ( typeof(T) != value.GetType() )
-                {
-                    throw new System.InvalidCastException();
-                }
-                else
-                {
-                    m_content = (T)value;
-                }
-            }
-        }
-    }
+    using MessageMap = MultiMap<string, PluginEventHandler>;
 
     public class StringData : Data<string>
     {
         public StringData(string name, string content) : base(name, content) { }
-
-        public override size_t size
-        {
-            get { return (size_t)m_content.Length; }
-        }
     }
 
     public class BitmapData : Data<Bitmap>
     {
         public BitmapData(string name, Bitmap content) : base(name, content) { }
-
-        public override size_t size
-        {
-            get { return (size_t)(m_content.Width * m_content.Height); }
-        }
     }
 
     public class Plugin : IPlugin
     {
-        private IData[] m_info =
-        {
-            new StringData("name", "skelton"),
-            new StringData("description", "skelton plugin"),
-            new StringData("copyright", "Copyright (C) 2014 tapetums"),
-            new BitmapData("icon", new Bitmap(@"F:\Dropbox\GitHub\C#\Plugin\Plugin\takoyaki.png")),
-        };
-        private IData[] m_data = null;
+        private ICollection<IData> m_info = null;
+        private ICollection<IData> m_data = null;
+
         private ICollection<IPlugin> m_collection = null;
         private MessageMap m_msg_map = new MessageMap();
         private ReaderWriterLock m_rwl = new ReaderWriterLock();
 
-        public IData[] info { get { return m_info; } }
-        public IData[] data { get { return m_data; } }
+        public ICollection<IData> info { get { return m_info; } }
+        public ICollection<IData> data { get { return m_data; } }
 
         public bool Init(ICollection<IPlugin> collection)
         {
             m_collection = collection;
-            return true;
-        }
 
-        public bool Attach(string msg, IPlugin plugin)
-        {
-            if ( plugin == null )
+            m_info = new List<IData>
             {
-                return false;
-            }
+                new StringData("name", "skelton"),
+                new StringData("description", "skelton plugin"),
+                new StringData("copyright", "Copyright (C) 2014 tapetums"),
+            };
 
-            using ( new WriteLock(m_rwl) )
+            var asm = System.Reflection.Assembly.GetExecutingAssembly();
+            var names = asm.GetManifestResourceNames();
+            foreach ( var name in names )
             {
-                if ( m_msg_map.Contains(msg, plugin) )
+                if ( name.Contains(".ico") )
                 {
-                    return false;
+                    var stream = asm.GetManifestResourceStream(name);
+                    var bmp_data = new BitmapData("icon", new Bitmap(stream));
+                    m_info.Add(bmp_data);
                 }
-
-                m_msg_map.Add(msg, plugin);
             }
 
             return true;
         }
 
-        public bool Detach(string msg, IPlugin plugin)
+        public async void Attach(string msg, PluginEventHandler handler)
         {
-            if ( plugin == null )
+            Console.WriteLine("Attach(\"" + msg + "\") begin");
+            if ( null == handler )
             {
-                return false;
+                Console.WriteLine("Attach(): handler is null");
+                Console.WriteLine("Attach(\"" + msg + "\") end");
+                return;
             }
 
-            using ( new WriteLock(m_rwl) )
+            await Task.Run(() =>
             {
-                return m_msg_map.Remove(msg, plugin, false);
-            }
+                using ( new WriteLock(m_rwl) )
+                {
+                    if ( m_msg_map.Contains(msg, handler) )
+                    {
+                        Console.WriteLine("Attach(\"" + msg + "\") is already attached with " + handler.ToString());
+                    }
+                    else
+                    {
+                        m_msg_map.Add(msg, handler);
+                        Console.WriteLine("Attach(\"" + msg + "\") attached");
+                    }
+                }
+            });
+            Console.WriteLine("Attach(\"" + msg + "\") end");
         }
 
-        public void Notify(string msg, IData data)
+        public async void Detach(string msg, PluginEventHandler handler)
         {
+            Console.WriteLine("Detach(\"" + msg + "\") begin");
+            if ( null == handler )
+            {
+                Console.WriteLine("Detach(): handler is null");
+                Console.WriteLine("Detach(\"" + msg + "\") end");
+                return;
+            }
+
+            await Task.Run(() =>
+            {
+                using ( new WriteLock(m_rwl) )
+                {
+                    var ret = m_msg_map.Remove(msg, handler);
+                    if ( ret )
+                    {
+                        Console.WriteLine("Detach(\"" + msg + "\") detached");
+                    }
+                    else
+                    {
+                        Console.WriteLine("Detach(\"" + msg + "\") is not attached with " + handler.ToString());
+                    }
+                }
+            });
+            Console.WriteLine("Detach(\"" + msg + "\") end");
+        }
+
+        public void Notify(object sender, PluginEventArgs e)
+        {
+            var cnt_handled = 0;
+
+            Console.WriteLine("Notify(\"" + e.msg + "\") begin");
             using ( new ReadLock(m_rwl) )
             {
-                foreach ( var list in m_msg_map[msg] )
+                var handlers = m_msg_map[e.msg];
+                if ( null == handlers )
                 {
-                    list.Notify(msg, data);
+                    Console.WriteLine("Notify(\"" + e.msg + "\") is not attached");
+                    Console.WriteLine("Notify(\"" + e.msg + "\") end");
+                    return;
+                }
+
+                foreach ( var handler in handlers )
+                {
+                    Task.Factory.StartNew(() =>
+                    {
+                        handler(sender, e);
+                    });
+                    Console.WriteLine("Notify(\"" + e.msg + "\") notified");
+
+                    ++cnt_handled;
                 }
             }
+            if ( cnt_handled < 1 )
+            {
+                Console.WriteLine("Notify(\"" + e.msg + "\") was sent to no handler");
+            }
+
+            Console.WriteLine("Notify(\"" + e.msg + "\") end");
+        }
+
+        public ICollection<PluginEventHandler> Handler(string msg)
+        {
+            return m_msg_map[msg];
         }
     }
 }

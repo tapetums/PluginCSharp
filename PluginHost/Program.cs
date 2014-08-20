@@ -6,6 +6,8 @@ using System.Drawing;
 using System.IO;
 using System.Reflection;
 using System.Windows.Forms;
+using System.Threading;
+using System.Threading.Tasks;
 
 using Plugin;
 
@@ -15,10 +17,10 @@ namespace PluginHost
 {
     static class Program
     {
-        private static char sep = Path.DirectorySeparatorChar;
+        private static char separater = Path.DirectorySeparatorChar;
+        private static string plugin_folder = "plugins";
         private static string IPluginTypeName = typeof(IPlugin).FullName;
         private static ICollection<IPlugin> plugins = new List<IPlugin>();
-        public static Image bitmap = null;
 
         /// <summary>
         /// アプリケーションのメイン エントリ ポイントです。
@@ -26,7 +28,11 @@ namespace PluginHost
         [STAThread]
         static void Main()
         {
-            LoadAllPlugins();
+            Task.Factory.StartNew(() =>
+            {
+                LoadAllPlugins();
+                TestMessage();
+            });
 
             Application.EnableVisualStyles();
             Application.SetCompatibleTextRenderingDefault(false);
@@ -36,7 +42,7 @@ namespace PluginHost
         private static void LoadAllPlugins()
         {
             var exe_path = Assembly.GetExecutingAssembly().Location;
-            var dir_path = Path.GetDirectoryName(exe_path) + sep + "plugins";
+            var dir_path = Path.GetDirectoryName(exe_path) + separater + plugin_folder;
 
             if ( ! Directory.Exists(dir_path) )
             {
@@ -93,32 +99,7 @@ namespace PluginHost
                     var infos = plugin.info;
                     foreach ( var info in infos )
                     {
-                        if ( null == info || null == info.name || null == info.content )
-                        {
-                            continue;
-                        }
-
-                        var info_type = info.content.GetType();
-                        if ( typeof(string) == info_type )
-                        {
-                            var name    = (string)info.name;
-                            var content = (string)info.content;
-
-                            var str = String.Format("{0}: {1}", name, content);
-                            Console.WriteLine(str);
-                        }
-                        else if ( typeof(Bitmap) == info_type )
-                        {
-                            bitmap = info.content as Bitmap;
-                            if ( null != bitmap )
-                            {
-                                var name    = (string)info.name;
-                                var content = bitmap.ToString();
-
-                                var str = String.Format("{0}: {1}", name, content);
-                                Console.WriteLine(str);
-                            }
-                        }
+                        GetPluginInfo(info);
                     }
 
                     plugins.Add(plugin);
@@ -128,6 +109,65 @@ namespace PluginHost
             {
                 MessageBox.Show(e.Message, e.GetType().ToString());
             }
+        }
+
+        private static void GetPluginInfo(IData info)
+        {
+            if ( null == info || null == info.name || null == info.content )
+            {
+                return;
+            }
+
+            var info_name = (string)info.name;
+            var info_type = info.content.GetType();
+
+            if ( typeof(string) == info_type )
+            {
+                var content = (string)info.content;
+                var str = String.Format("{0}: {1}", info_name, content);
+                Console.WriteLine(str);
+            }
+            else if ( typeof(Bitmap) == info_type )
+            {
+                var image = info.content as Bitmap;
+                if ( null == image )
+                {
+                    return;
+                }
+
+                var content = image.ToString();
+                var str = String.Format("{0}: {1}", info_name, content);
+                Console.WriteLine(str);
+
+                MainForm.image = image;
+            }
+        }
+
+        private static void TestMessage()
+        {
+            Console.WriteLine("TestMessage: begin");
+
+            foreach (var plugin in plugins)
+            {
+                if (null == plugin)
+                {
+                    continue;
+                }
+
+                PluginEventHandler handler = (sender, e) =>
+                {
+                    Console.WriteLine("handler: begin");
+                    Console.WriteLine("handler: sender \"" + (sender ?? "(null)") + "\"");
+                    Console.WriteLine("handler: msg \"" + e.msg + "\"");
+                    Console.WriteLine("handler: end");
+                };
+
+                plugin.Attach("AFO", handler);
+                plugin.Notify(null, new PluginEventArgs("AFO", null));
+                plugin.Detach("AFO", handler);
+            }
+
+            Console.WriteLine("TestMessage: end");
         }
     }
 }

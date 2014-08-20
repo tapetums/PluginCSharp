@@ -6,6 +6,8 @@ namespace PluginHost
 {
     public partial class MainForm : Form
     {
+        public static Image image = null;
+
         public MainForm()
         {
             InitializeComponent();
@@ -18,8 +20,7 @@ namespace PluginHost
 
         private void MainForm_Paint(object sender, PaintEventArgs e)
         {
-            var bitmap = Program.bitmap;
-            if ( null == bitmap )
+            if ( null == image )
             {
                 return;
             }
@@ -28,8 +29,8 @@ namespace PluginHost
 
             var sw = e.ClipRectangle.Width;
             var sh = e.ClipRectangle.Height;
-            var bw = bitmap.Width;
-            var bh = bitmap.Height;
+            var bw = image.Width;
+            var bh = image.Height;
 
             int x, y, w, h;
             if ( bw * sh < bh * sw )
@@ -47,7 +48,7 @@ namespace PluginHost
                 y = (sh - h) / 2;
             }
 
-            g.DrawImage(bitmap, x, y, w, h);
+            g.DrawImage(image, x, y, w, h);
         }
     }
 }

@@ -82,7 +82,7 @@ namespace System.Collections.Generic
 
         public bool Contains(Key k, Value v)
         {
-            var l = d[k];
+            var l = this[k];
 
             if ( null == l )
             {
