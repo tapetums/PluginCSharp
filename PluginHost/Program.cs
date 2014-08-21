@@ -138,8 +138,6 @@ namespace PluginHost
                 var content = image.ToString();
                 var str = String.Format("{0}: {1}", info_name, content);
                 Console.WriteLine(str);
-
-                MainForm.image = image;
             }
         }
 
