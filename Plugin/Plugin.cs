@@ -24,10 +24,10 @@ namespace Plugin
 
     public class Plugin : IPlugin
     {
-        private ICollection<IData> m_info = null;
-        private ICollection<IData> m_data = null;
-
+        private ICollection<IData>   m_info = null;
+        private ICollection<IData>   m_data = null;
         private ICollection<IPlugin> m_collection = null;
+
         private MessageMap m_msg_map = new MessageMap();
         private ReaderWriterLock m_rwl = new ReaderWriterLock();
 
